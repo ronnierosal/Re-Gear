@@ -18,8 +18,8 @@ export function disconnectProgress(payload: SnapshotPayload | null, failed = fal
       : "Live GPU release and final disconnect verification are not available in this build.",
     rows: [
       {label:"No game running", state:fresh && s?.game_state === "idle" ? "ready" : fresh && s?.game_state === "running" ? "blocked" : "waiting"},
-      {label:"Ally display & render GPU", state:fresh && internal ? "ready" : "waiting"},
-      {label:"Ally audio", state:"unavailable"},
+      {label:"Handheld display & render GPU", state:fresh && internal ? "ready" : "waiting"},
+      {label:"Handheld audio", state:"unavailable"},
       {label:"Remaining eGPU clients", state:fresh && clientsClear ? "ready" : fresh && d?.clients.length ? "blocked" : "waiting"},
       {label:"GPU & link release", state:"unavailable"},
       {label:"Final disconnect verification", state:"unavailable"},

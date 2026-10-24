@@ -387,8 +387,8 @@ function showSafeDisconnectConfirmation(
   };
   modal = showModal(
     <EgpuConfirmModal
-      strTitle={portable ? "Shut down for eGPU disconnect?" : "Return to Ally for eGPU disconnect?"}
-      strOKButtonText={portable ? "Shut down" : "Return to Ally"}
+      strTitle={portable ? "Shut down for eGPU disconnect?" : "Switch to Handheld for eGPU disconnect?"}
+      strOKButtonText={portable ? "Shut Down" : "Switch to Handheld"}
       strCancelButtonText="Cancel"
       bDestructiveWarning={true}
       bDisableBackgroundDismiss={true}
@@ -427,8 +427,8 @@ function showControllerDisplayConfirmation(
   const close = () => { modal.Close(); onClose(); };
   modal = showModal(
     <ConfirmModal
-      strTitle={target === "tv" ? "Switch to TV?" : "Return to Ally?"}
-      strOKButtonText={target === "tv" ? "Switch to TV" : "Return to Ally"}
+      strTitle={target === "tv" ? "Switch to TV?" : "Switch to Handheld?"}
+      strOKButtonText={target === "tv" ? "Switch to TV" : "Switch to Handheld"}
       strCancelButtonText="Cancel"
       bDisableBackgroundDismiss={true}
       bHideCloseIcon={true}
@@ -1358,13 +1358,13 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
       if (!approval.approval_token || approval.blockers.length > 0) {
         setSafeDisconnectMessage(
           approval.blockers.length > 0
-            ? `Return to Ally blocked: ${approval.blockers.map(label).join(", ")}.`
+            ? `Switch to Handheld blocked: ${approval.blockers.map(label).join(", ")}.`
             : "Portable transition approval was not issued. Inspect again.",
         );
         return;
       }
       toaster.toast({
-        title: "Re-Gear is returning to the Ally",
+        title: "Re-Gear is switching to the handheld screen",
         body: "Do not disconnect the eGPU. Wait for Portable verification, then shut down.",
         critical: true,
         duration: 30000,
@@ -2187,9 +2187,10 @@ function Content({ preflight, connection, shortcut, openExpanded, menuShortcutAv
         reason:!menuFresh?"Current status unavailable":payload?.inference.mode!=="portable"?"Return to Handheld first":safeDisconnectBusy||tvSwitchBusy?"Operation in progress":"Portable shutdown",
         pending:safeDisconnectBusy,message:safeDisconnectMessage,
         request:()=>{if(buildProfile === "development"&&!runtimeOwner.stopped&&menuFresh&&payload?.inference.mode==="portable")void executeSafeDisconnect(true);}},
-      handheld:{available:buildProfile === "development"&&menuFresh&&primaryDisplayAction.target==="ally"&&!primaryDisplayAction.disabled,
-        reason:!menuFresh?"Current display status unavailable":primaryDisplayAction.target!=="ally"?"Handheld switch is not currently offered":primaryDisplayAction.description,
-        request:()=>{if(buildProfile === "development"&&!runtimeOwner.stopped&&menuFresh&&primaryDisplayAction.target==="ally"&&!primaryDisplayAction.disabled)activateDisplay();}},
+      displayAction:{target:menuFresh?primaryDisplayAction.target:null,
+        available:menuFresh&&primaryDisplayAction.target!==null&&!primaryDisplayAction.disabled,
+        reason:!menuFresh?"Current display status unavailable":primaryDisplayAction.description,
+        request:()=>{if(!runtimeOwner.stopped&&menuFresh&&primaryDisplayAction.target!==null&&!primaryDisplayAction.disabled)activateDisplay();}},
       sleepConnected:{available:buildProfile === "development"&&menuFresh&&!safeDisconnectBusy&&!tvSwitchBusy,
         reason:!menuFresh?"Current status unavailable":safeDisconnectBusy||tvSwitchBusy?"Operation in progress":"Sleep with the eGPU connected",
         request:()=>{if(buildProfile === "development"&&!runtimeOwner.stopped&&menuFresh&&!safeDisconnectBusy&&!tvSwitchBusy)setProductionActionRequest({action:"sleep-connected",nonce:++productionActionNonce.current});}},

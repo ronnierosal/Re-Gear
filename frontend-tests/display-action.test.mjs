@@ -32,7 +32,7 @@ test("both docked modes offer the way back to the handheld", () => {
   // television and both must offer the way back.
   for (const mode of ["tv_docked", "docked_egpu"]) {
     assert.equal(action(mode).target, "ally");
-    assert.equal(action(mode).title, "Switch to handheld");
+    assert.equal(action(mode).title, "Switch to Handheld");
     assert.equal(action(mode).disabled, false);
   }
   assert.equal(action("portable").target, "tv");

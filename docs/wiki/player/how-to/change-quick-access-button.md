@@ -1,24 +1,48 @@
 # Change a Quick Access button
 
-This developing customization task is intended to help you replace a shortcut with another available action.
+In a development build, tap **Y** to replace a Quick Access button, fill an
+empty slot, or leave a slot empty.
 
 ## For players — no technical background needed
 
-**Candidate-only guidance:** customization is being tested in the newer UI. The
-earlier proposed **Settings / Customize** steps do not match every implementation.
-Do not look for those controls or reinstall merely to match a mockup.
+This flow is implemented in development source and hidden in the production
+profile. Read [Customize Re-Gear](../customize.md) before using these steps.
 
-1. Check the instructions supplied with your installed test build.
-2. Use its displayed customization hint only when that action is offered.
-3. Review the resulting arrangement. If the named option is absent, stop and
-   report the build and what you see through [troubleshooting](../troubleshooting.md).
+### Replace a button
 
-The UI owner reports a Y-on-focused-control picker and native move mode in the
-0.3.107 test candidate. This is not an installed-build acceptance or a verified
-step sequence for all versions. Exact action-specific steps await that evidence.
+1. Open Re-Gear and stay on **Quick Access**.
+2. Move to the button you want to replace and tap **Y**.
+3. In **Change _button name_**, optionally choose a filter such as **All**,
+   **eGPU**, or **Display**.
+4. Select the replacement with **A**. The picker closes and focus returns to
+   the replaced Quick Access button.
+
+The chosen button should take the old button's place.
+
+### Add a button
+
+Move to a dimmed, dashed **Empty slot**, tap **Y**, and select a button from the
+picker. The new button should fill that slot.
+
+### Remove a button
+
+Tap **Y** on the button, then select **Remove button**. The slot should become
+empty. The feature remains available on its own tab.
+
+### If it does not work
+
+- Nothing happens when you tap **Y**: confirm that the build shows Y editing
+  hints and that you are on **Quick Access**. Tapping Y on other tabs does
+  nothing by design.
+- A button is missing from the picker: only controls marked for Quick Access can
+  be added.
+- **Could not save this layout. Your saved layout is unchanged.**: the previous
+  layout was kept. Retry once, then follow [Troubleshooting](../troubleshooting.md).
 
 ## Technical details — for advanced users and contributors
 
-Track [PR329](https://github.com/ronnierosal/Re-Gear/pull/329) and the
-[current evidence](../../technical/current-state.md). Original design briefs remain
-in the archive; they are not executable instructions or a promise of availability.
+The picker is rendered by
+`src/quick-access/expanded-command-center/shell.tsx`. Eligibility and grouping
+come from `quickEligible`, `replace`, and `domain` in `control-registry.ts`.
+Availability and evidence limits are on
+[Customize Re-Gear](../customize.md#technical-details--for-advanced-users-and-contributors).

@@ -76,10 +76,17 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
   if (production) {
     tiles = productionEgpuTiles(tiles);
     const disconnectTile = tiles.egpu?.find(tile => tile.id === "disconnect");
+    const displayTargetTile = tiles.egpu?.find(tile => tile.id === "display-target");
     if (disconnectTile?.tone === "unavailable" || /unavailable/i.test(disconnectTile?.value ?? "")) {
       unavailableActions = {
         ...unavailableActions,
         disconnect: unavailableActions.disconnect || disconnectTile?.detail || "Current readiness unavailable",
+      };
+    }
+    if (displayTargetTile?.tone === "unavailable" || /unavailable|unknown/i.test(displayTargetTile?.value ?? "")) {
+      unavailableActions = {
+        ...unavailableActions,
+        "display-target": unavailableActions["display-target"] || displayTargetTile?.detail || "Current display status unavailable",
       };
     }
     layoutStorage = undefined;
@@ -92,7 +99,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
     } : undefined;
     const requestAction = onAction;
     onAction = requestAction ? (tab, tile) => tab === "egpu"
-      && (tile.id === "disconnect-sleep" || tile.id === "disconnect-shutdown")
+      && (tile.id === "display-target" || tile.id === "disconnect-sleep" || tile.id === "disconnect-shutdown")
       && requestAction(tab, tile) : undefined;
   }
   const Button = primitives?.Button ?? "button";
@@ -414,7 +421,7 @@ export function ExpandedCommandCenter({ onClose, initialTab = "quick", longReaso
         <span className="rg-expanded-value">{status}</span>
       </SharedTile>;
     }
-    const v3ControlId=definition?.id??original.tile.id;
+    const v3ControlId=item.artworkControlId??definition?.id??original.tile.id;
     const v3ArtworkId=v3ArtworkIdFor(v3ControlId);
     if(v3ArtworkId){
       return <SharedTile {...buttonProps} key={item.id} Button={Button} buttonProps={buttonProps} label={item.title} artworkId={v3ArtworkId} artwork={<V3Artwork controlId={v3ControlId}/> }>

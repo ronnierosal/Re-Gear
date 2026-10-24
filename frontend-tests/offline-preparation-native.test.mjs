@@ -357,3 +357,115 @@ test("a malformed or duplicate local envelope cannot assert progress", (t) => {
   callback(true, [...envelope([item({ active: true })]), ...envelope([])]);
   assert.deepEqual(reports.map(r => r.state), ["requested"]);
 });
+
+test("an item removed from the list after progress expires to unconfirmed after a grace period", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const c = collect(t, {}, "queue", { absentGraceMs: 10000 });
+  c.send([item({ queue_index: 0 })]);
+  c.send([item({ appid: 999, active: true })]);
+  assert.deepEqual(c.states(), ["requested", "queued"], "one missing snapshot is not final");
+  t.mock.timers.tick(9999);
+  assert.deepEqual(c.states(), ["requested", "queued"]);
+  t.mock.timers.tick(1);
+  assert.deepEqual(c.states(), ["requested", "queued", "unconfirmed"]);
+  assert.equal(c.calls.unregister, 1);
+});
+
+test("an item briefly missing from the list and then back keeps the run alive", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const c = collect(t, {}, "queue", { absentGraceMs: 10000 });
+  c.send([item({ queue_index: 0 })]);
+  c.send([]);
+  t.mock.timers.tick(5000);
+  c.send([item({ active: true })]);
+  t.mock.timers.tick(60000);
+  assert.deepEqual(c.states(), ["requested", "queued", "active"]);
+  c.send([item({ completed: true, completed_time: 9 })]);
+  assert.deepEqual(c.states(), ["requested", "queued", "active", "completed"]);
+});
+
+test("real progress is seen even while a pre-dispatch error code lingers", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const stale = item({ update_result: 12 });
+  const reports = [];
+  let emit = null;
+  const ports = {
+    localClientId: () => CLIENT,
+    queueAppUpdate() {},
+    registerForDownloadItems: (cb) => { cb(true, envelope([stale])); emit = cb; return { unregister() {} }; },
+    contentTypeIndex: INDEX,
+  };
+  startOfflinePreparation(APP, "queue", ports, (r) => reports.push(r), { unconfirmedAfterMs: 30000 });
+  emit(true, envelope([item({ update_result: 12, active: true, buildid: 101 })]));
+  assert.deepEqual(reports.map((r) => r.state), ["requested", "active"]);
+  assert.equal(reports.at(-1).errorCode, null, "the stale code is not presented as this run's");
+  // The item then stops with the same code: that failure is this run's.
+  emit(true, envelope([item({ update_result: 12, buildid: 101 })]));
+  assert.deepEqual(reports.map((r) => r.state), ["requested", "active", "error"]);
+});
+
+test("a different error code after dispatch is surfaced immediately", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const reports = [];
+  let emit = null;
+  const ports = {
+    localClientId: () => CLIENT,
+    queueAppUpdate() {},
+    registerForDownloadItems: (cb) => { cb(true, envelope([item({ update_result: 12 })])); emit = cb; return { unregister() {} }; },
+    contentTypeIndex: INDEX,
+  };
+  startOfflinePreparation(APP, "queue", ports, (r) => reports.push(r));
+  emit(true, envelope([item({ update_result: 21 })]));
+  assert.deepEqual(reports.map((r) => r.state), ["requested", "error"]);
+  assert.equal(reports.at(-1).errorCode, 21);
+});
+
+test("an item never seen after dispatch is left to the unconfirmed timer", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const c = collect(t, {}, "queue", { unconfirmedAfterMs: 30000 });
+  c.send([]);
+  assert.deepEqual(c.states(), ["requested"]);
+  t.mock.timers.tick(30000);
+  assert.deepEqual(c.states(), ["requested", "unconfirmed"]);
+});
+
+test("an error present before dispatch is not this request's failure", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const stale = item({ update_result: 12 });
+  const reports = [];
+  let emit = null;
+  const ports = {
+    localClientId: () => CLIENT,
+    queueAppUpdate() {},
+    registerForDownloadItems: (cb) => {
+      cb(true, envelope([stale]));
+      emit = cb;
+      return { unregister() {} };
+    },
+    contentTypeIndex: INDEX,
+  };
+  startOfflinePreparation(APP, "queue", ports, (r) => reports.push(r), { unconfirmedAfterMs: 30000 });
+  emit(true, envelope([stale]));
+  assert.deepEqual(reports.map((r) => r.state), ["requested"]);
+  // Steam retries the request: progress, then a genuinely new failure.
+  emit(true, envelope([item({ queue_index: 0 })]));
+  emit(true, envelope([item({ update_result: 12 })]));
+  assert.deepEqual(reports.map((r) => r.state), ["requested", "queued", "error"]);
+});
+
+test("a stale pre-dispatch error with no retry expires to unconfirmed", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const stale = item({ update_result: 12 });
+  const reports = [];
+  let emit = null;
+  const ports = {
+    localClientId: () => CLIENT,
+    queueAppUpdate() {},
+    registerForDownloadItems: (cb) => { cb(true, envelope([stale])); emit = cb; return { unregister() {} }; },
+    contentTypeIndex: INDEX,
+  };
+  startOfflinePreparation(APP, "queue", ports, (r) => reports.push(r), { unconfirmedAfterMs: 30000 });
+  emit(true, envelope([stale]));
+  t.mock.timers.tick(30000);
+  assert.deepEqual(reports.map((r) => r.state), ["requested", "unconfirmed"]);
+});

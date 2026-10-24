@@ -1,9 +1,640 @@
 """Include the standalone hub regression suite in the repository's normal gate."""
 import importlib.util
+import copy
+import json
 from pathlib import Path
+import sqlite3
+import subprocess
 import sys
+import tempfile
+import threading
+import unittest
 
 HUB_DIR = Path(__file__).resolve().parents[1] / 'scripts' / 'agent_hub'
+sys.path.insert(0, str(HUB_DIR))
+import hub
+sys.path.remove(str(HUB_DIR))
+
+
+class CompiledMaintenanceTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.db = Path(self.temp.name) / 'hub.sqlite3'
+        self.store = hub.Hub(self.db)
+        self.store.init()
+        with self.store.connection(True) as db:
+            sessions = {(row['owner'] or hub.MAINTAINER) for row in hub.APPROVED_TASKS.values()}
+            sessions.add(hub.MAINTAINER)
+            for session in sessions:
+                db.execute('INSERT INTO sessions VALUES (?,?,?,?,?)',
+                           (session, 'codex' if session.startswith('codex') else 'claude', session, 'fixture', hub.now()))
+            for stream in {row['stream'] for row in hub.APPROVED_TASKS.values()}:
+                db.execute('INSERT OR IGNORE INTO streams(id,title) VALUES (?,?)', (stream, stream))
+            for row in hub.APPROVED_TASKS.values():
+                self._insert(db, row)
+            self._insert(db, hub.APPROVED_MAINTENANCE_ASSIGNMENT)
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    @staticmethod
+    def _insert(db, row):
+        columns = tuple(row)
+        db.execute(f"INSERT INTO tasks({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})",
+                   tuple(row[column] for column in columns))
+
+    def rows_and_events(self):
+        with self.store.connection() as db:
+            rows = [dict(r) for r in db.execute('SELECT * FROM tasks ORDER BY id')]
+            events = [dict(r) for r in db.execute('SELECT * FROM events ORDER BY seq')]
+        return rows, events
+
+    def test_closeout_exact_fixture_is_atomic_and_preserves_history(self):
+        before = {key: copy.deepcopy(hub.APPROVED_TASKS[key]) for key in (
+            'tdp-readiness-evidence-setup', 'tdp-lifecycle-gap-verification')}
+        result = self.store.close_approved_auto_tdp_records(hub.MAINTAINER)
+        self.assertEqual([(r['state'], r['rev']) for r in result['tasks']], [('done', 4), ('done', 7)])
+        for row in result['tasks']:
+            old = before[row['id']]
+            for field in old:
+                if field not in ('state', 'rev', 'updated', 'evidence'):
+                    self.assertEqual(row[field], old[field])
+            self.assertTrue(row['evidence'].startswith(old['evidence']))
+            self.assertIn(hub.CLOSEOUT_EVIDENCE[row['id']], row['evidence'])
+        self.assertEqual(self.rows_and_events()[1][-1]['action'], 'close_approved_auto_tdp_records')
+
+    def test_closeout_rejects_every_mutated_field_without_any_mutation(self):
+        key = 'tdp-lifecycle-gap-verification'
+        for field in hub.APPROVED_TASKS[key]:
+            with self.subTest(field=field):
+                with self.store.connection(True) as db:
+                    original = hub.APPROVED_TASKS[key][field]
+                    changed = original + 'x' if isinstance(original, str) else original + 1
+                    if field == 'stream':
+                        db.execute('INSERT INTO streams(id,title) VALUES (?,?)', (changed, changed))
+                    if field == 'owner':
+                        db.execute('INSERT INTO sessions VALUES (?,?,?,?,?)', (changed, 'other', changed, 'fixture', hub.now()))
+                    db.execute(f'UPDATE tasks SET {field}=? WHERE id=?', (changed, key))
+                snapshot = self.rows_and_events()
+                with self.assertRaises(hub.Conflict):
+                    self.store.close_approved_auto_tdp_records(hub.MAINTAINER)
+                self.assertEqual(self.rows_and_events(), snapshot)
+                with self.store.connection(True) as db:
+                    where_key = changed if field == 'id' else key
+                    db.execute(f'UPDATE tasks SET {field}=? WHERE id=?', (original, where_key))
+
+    def test_closeout_rejects_wrong_actor_support_record_and_replay(self):
+        snapshot = self.rows_and_events()
+        with self.assertRaises(hub.Conflict):
+            self.store.close_approved_auto_tdp_records('claude-3e188980-234d-4e35-9a46-1b048630ba63')
+        self.assertEqual(self.rows_and_events(), snapshot)
+        with self.store.connection(True) as db:
+            db.execute("UPDATE tasks SET evidence=evidence||'x' WHERE id='tdp-readiness-evidence-recovery-277'")
+        changed = self.rows_and_events()
+        with self.assertRaises(hub.Conflict):
+            self.store.close_approved_auto_tdp_records(hub.MAINTAINER)
+        self.assertEqual(self.rows_and_events(), changed)
+
+    def test_operations_use_the_exact_compiled_conditional_consent(self):
+        self.assertEqual(hub.CLOSEOUT_EXECUTION_AUTHORIZATION, hub.OPERATION_CONSENT)
+        self.assertEqual(hub.RANGE_EXECUTION_AUTHORIZATION, hub.OPERATION_CONSENT)
+        self.assertEqual(hub.OPERATION_CONSENT,
+                         'https://github.com/ronnierosal/Re-Gear/issues/498#issuecomment-6069197182')
+        self.assertEqual(hub.Hub._digest(hub.APPROVED_MAINTENANCE_ASSIGNMENT),
+                         hub.MAINTENANCE_ASSIGNMENT_DIGEST)
+
+    def test_closeout_concurrency_has_one_success_and_one_clean_failure(self):
+        outcomes = []
+        def run():
+            try:
+                self.store.close_approved_auto_tdp_records(hub.MAINTAINER)
+                outcomes.append('ok')
+            except hub.Conflict:
+                outcomes.append('conflict')
+        threads = [threading.Thread(target=run) for _ in range(2)]
+        for thread in threads: thread.start()
+        for thread in threads: thread.join()
+        self.assertCountEqual(outcomes, ['ok', 'conflict'])
+        self.assertEqual(sum(e['action'] == 'close_approved_auto_tdp_records' for e in self.rows_and_events()[1]), 1)
+
+    def test_range_amendment_changes_only_branch_revision_and_timestamp(self):
+        old = copy.deepcopy(hub.APPROVED_TASKS['tdp-runtime-expressible-range-admission'])
+        result = self.store.amend_approved_auto_tdp_range_branch(hub.MAINTAINER)['task']
+        self.assertEqual(result['branch'], hub.RANGE_NEW_BRANCH)
+        self.assertEqual(result['rev'], 2)
+        for field in old:
+            if field not in ('branch', 'rev', 'updated'):
+                self.assertEqual(result[field], old[field])
+        snapshot = self.rows_and_events()
+        with self.assertRaises(hub.Conflict):
+            self.store.amend_approved_auto_tdp_range_branch(hub.MAINTAINER)
+        self.assertEqual(self.rows_and_events(), snapshot)
+
+    def test_range_amendment_rejects_every_mutated_field_and_wrong_assignment(self):
+        key = 'tdp-runtime-expressible-range-admission'
+        for field in hub.APPROVED_TASKS[key]:
+            with self.subTest(field=field):
+                original = hub.APPROVED_TASKS[key][field]
+                changed = original + 'x' if isinstance(original, str) else (1 if original is None else original + 1)
+                with self.store.connection(True) as db:
+                    if field == 'stream':
+                        db.execute('INSERT INTO streams(id,title) VALUES (?,?)', (changed, changed))
+                    if field == 'owner':
+                        db.execute('INSERT INTO sessions VALUES (?,?,?,?,?)', (changed, 'other', changed, 'fixture', hub.now()))
+                    db.execute(f'UPDATE tasks SET {field}=? WHERE id=?', (changed, key))
+                snapshot = self.rows_and_events()
+                with self.assertRaises(hub.Conflict):
+                    self.store.amend_approved_auto_tdp_range_branch(hub.MAINTAINER)
+                self.assertEqual(self.rows_and_events(), snapshot)
+                with self.store.connection(True) as db:
+                    where_key = changed if field == 'id' else key
+                    db.execute(f'UPDATE tasks SET {field}=? WHERE id=?', (original, where_key))
+        with self.store.connection(True) as db:
+            db.execute("UPDATE tasks SET state='cancelled', rev=99, paths='[\"unrelated/path\"]' WHERE id=?",
+                       (hub.MAINTENANCE_TASK,))
+        snapshot = self.rows_and_events()
+        for operation in (self.store.amend_approved_auto_tdp_range_branch,
+                          self.store.close_approved_auto_tdp_records):
+            with self.assertRaises(hub.Conflict):
+                operation(hub.MAINTAINER)
+            self.assertEqual(self.rows_and_events(), snapshot)
+
+    def test_range_concurrency_and_operation_isolation(self):
+        outcomes = []
+        def run():
+            try:
+                self.store.amend_approved_auto_tdp_range_branch(hub.MAINTAINER)
+                outcomes.append('ok')
+            except hub.Conflict:
+                outcomes.append('conflict')
+        threads = [threading.Thread(target=run) for _ in range(2)]
+        for thread in threads: thread.start()
+        for thread in threads: thread.join()
+        self.assertCountEqual(outcomes, ['ok', 'conflict'])
+        readiness = next(r for r in self.rows_and_events()[0] if r['id'] == 'tdp-readiness-evidence-setup')
+        self.assertEqual(readiness, hub.APPROVED_TASKS[readiness['id']])
+
+    def test_cli_round_trip_has_no_generic_target_or_authorization_arguments(self):
+        script = HUB_DIR / 'hub.py'
+        result = subprocess.run([sys.executable, str(script), '--db', str(self.db),
+                                 'amend-approved-auto-tdp-range-branch', '--session', hub.MAINTAINER],
+                                text=True, capture_output=True, check=True)
+        self.assertEqual(json.loads(result.stdout)['task']['branch'], hub.RANGE_NEW_BRANCH)
+        help_text = subprocess.run([sys.executable, str(script), '--db', str(self.db),
+                                    'close-approved-auto-tdp-records', '--help'],
+                                   text=True, capture_output=True, check=True).stdout
+        for forbidden in ('--task', '--owner', '--state', '--authorization', '--force', '--delete', '--takeover'):
+            self.assertNotIn(forbidden, help_text)
+
+
+
+class RecoveryMirror497Tests(unittest.TestCase):
+    """Only temporary databases; never invoke the installed workspace hub."""
+    def setUp(self):
+        from unittest.mock import patch
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.store = hub.Hub(Path(self.tmp.name) / 'fixture.sqlite3')
+        self.store.init()
+        self.actor = 'codex-cloud-continuity-01a13aab'
+        self.recipient = 'codex-cloud-continuity-01a13aab'
+        for session in (self.actor, self.recipient, 'codex-01a080fd', 'other'):
+            self.store.register(session, 'codex', session, 'fixture')
+        self.key = 'tdp-runtime-expressible-range-admission'
+        self.row = self.store.apply('codex-01a080fd', dict(
+            op='create_task', id=self.key, stream='auto-tdp', title='Fixture',
+            branch='agent/codex-local/497-tdp-expressible-range-admission',
+            paths=['backend/regear/delivery/tdp_runtime.py'],
+            issue='https://github.com/ronnierosal/Re-Gear/issues/497'))
+        self.row = self.store.apply('codex-01a080fd', dict(op='claim_task', id=self.key, rev=1))
+        for _ in range(2):
+            self.row = self.store.apply('codex-01a080fd', dict(op='update_task', id=self.key, rev=self.row['rev'], state='in_progress'))
+        self.maintenance = self.store.apply(self.actor, dict(
+            op='create_task', id='agent-hub-497-recovery-binding-552', stream='coordination',
+            title='Fixture maintenance', branch='agent/codex-local/532-bounded-maintainer-recovery',
+            paths=['scripts/agent_hub/hub.py']))
+        self.maintenance = self.store.apply(self.actor, dict(op='claim_task', id=self.maintenance['id'], rev=1))
+        self.canonical = dict(revision=9, owner=self.recipient, status='in-progress',
+                              transfer=dict(from_='unused'))
+        self.canonical['transfer'] = {'from':'codex-cloud-lifecycle-director-20261003','to':self.recipient,'accepted':True}
+        self.receipt = {'issue':497, 'record':self.canonical,
+                        'receipts':['https://github.com/ronnierosal/Re-Gear/issues/497#issuecomment-6101936371',
+                                    'https://github.com/ronnierosal/Re-Gear/issues/497#issuecomment-6101972445',
+                                    'https://github.com/ronnierosal/Re-Gear/issues/497#issuecomment-6101984876',
+                                    'https://github.com/ronnierosal/Re-Gear/issues/497#issuecomment-6372261189',
+                                    'https://github.com/ronnierosal/Re-Gear/actions/runs/40006082982']}
+        for name, value in {
+            'RECOVERY497_PREIMAGE_DIGEST':hub.Hub._digest(self.row),
+            'RECOVERY497_CANONICAL_DIGEST':hub.Hub._digest(self.canonical),
+            'RECOVERY497_MAINTENANCE_DIGEST':hub.Hub._digest(self.maintenance),
+            'RECOVERY497_EXECUTION_AUTHORIZATION':'fixture-separate-invocation-approval',
+        }.items():
+            patcher=patch.object(hub, name, value, create=True);patcher.start();self.addCleanup(patcher.stop)
+
+    def snapshot(self):
+        return self.store.status(), self.store.history()
+
+    def invoke(self, actor=None, receipt=None):
+        return self.store.mirror_accepted_497_recovery(actor or self.actor,
+                                                   self.receipt if receipt is None else receipt)
+
+    def refused_unchanged(self, callback):
+        before=self.snapshot()
+        with self.assertRaises((hub.Conflict, ValueError)):
+            callback()
+        self.assertEqual(before,self.snapshot())
+
+    def test_ordinary_transfer_refuses_actual_maintenance_actor(self):
+        self.refused_unchanged(lambda:self.store.apply(self.actor, dict(
+            op='offer_transfer',kind='task',id=self.key,rev=4,to=self.recipient,note='No impersonation')))
+
+    def test_success_changes_only_owner_revision_and_audits_actual_actor(self):
+        result=self.invoke();after=result['task']
+        self.assertEqual(after,dict(self.row,owner=self.recipient,rev=5))
+        event=self.store.history()[0]
+        self.assertEqual(event['actor'],self.actor)
+        self.assertEqual(event['action'],'mirror_accepted_497_recovery')
+        self.assertIn('maintainer-recovery',event['detail'])
+        self.assertEqual(self.store.status()['transfers'],[])
+        self.refused_unchanged(self.invoke)
+
+    def test_wrong_actor_receipt_and_each_canonical_field_refused(self):
+        self.refused_unchanged(lambda:self.invoke(actor='codex-01a080fd'))
+        for field in self.receipt:
+            changed=copy.deepcopy(self.receipt);changed[field]=None
+            self.refused_unchanged(lambda:self.invoke(receipt=changed))
+        for field in self.canonical:
+            changed=copy.deepcopy(self.receipt);changed['record'][field]=None
+            self.refused_unchanged(lambda:self.invoke(receipt=changed))
+
+    def test_each_full_preimage_field_change_is_refused(self):
+        for field in self.row:
+            if field in ('id','owner','stream'):continue
+            old=self.row[field];changed=old+1 if type(old) is int else old+'x'
+            with self.store.connection(True) as db:
+                db.execute(f'UPDATE tasks SET {field}=? WHERE id=?',(changed,self.key))
+            self.refused_unchanged(self.invoke)
+            with self.store.connection(True) as db:
+                db.execute(f'UPDATE tasks SET {field}=? WHERE id=?',(old,self.key))
+
+    def test_pending_transfer_collision_and_unregistered_recipient_refused(self):
+        transfer=self.store.apply('codex-01a080fd',dict(op='offer_transfer',kind='task',id=self.key,rev=4,to=self.recipient,note='Fixture'))
+        self.refused_unchanged(self.invoke)
+        self.store.apply('codex-01a080fd',dict(op='cancel_transfer',id=transfer['id']))
+        other=self.store.apply('other',dict(op='create_task',id='collision',stream='auto-tdp',title='Collision',branch='other/branch',paths=['backend/regear/delivery/tdp_runtime.py']))
+        # Synthetic collision cannot be claimed normally; install it only in this fixture.
+        with self.store.connection(True) as db:
+            db.execute("UPDATE tasks SET owner='other',state='in_progress' WHERE id='collision'")
+        self.refused_unchanged(self.invoke)
+        with self.store.connection(True) as db:
+            db.execute("UPDATE tasks SET state='cancelled' WHERE id='collision'")
+            db.execute('DELETE FROM transfers')
+        # Actor and recipient intentionally coincide in the accepted successor.
+        # Keep FK constraints intact and bind a separate synthetic missing recipient.
+        from unittest.mock import patch
+        missing=copy.deepcopy(self.receipt)
+        missing['record']['owner']='unregistered-recipient'
+        missing['record']['transfer']['to']='unregistered-recipient'
+        with patch.object(hub,'RECOVERY497_RECIPIENT','unregistered-recipient'), \
+                patch.object(hub,'RECOVERY497_CANONICAL_DIGEST',hub.Hub._digest(missing['record'])):
+            self.refused_unchanged(lambda:self.invoke(receipt=missing))
+
+    def test_disabled_authority_and_maintenance_binding_refused(self):
+        from unittest.mock import patch
+        for name in ('RECOVERY497_EXECUTION_AUTHORIZATION','RECOVERY497_MAINTENANCE_DIGEST'):
+            with patch.object(hub,name,None):self.refused_unchanged(self.invoke)
+
+    def test_retired_maintenance_actor_cannot_invoke_successor(self):
+        retired = 'codex-local-coordination-recovery-20261008'
+        self.store.register(retired, 'codex', 'Retired fixture actor', 'fixture')
+        self.refused_unchanged(lambda:self.invoke(actor=retired))
+
+    def test_old_canonical_recipient_record_refused(self):
+        from unittest.mock import patch
+        old=copy.deepcopy(self.receipt)
+        old['record'].update(revision=7,owner='codex-cloud-lifecycle-director-20261003',
+            transfer={'from':'codex-01a080fd','to':'codex-cloud-lifecycle-director-20261003','accepted':True})
+        with patch.object(hub,'RECOVERY497_CANONICAL_DIGEST',hub.Hub._digest(old['record'])):
+            self.refused_unchanged(lambda:self.invoke(receipt=old))
+
+    def test_terminal_successor_assignment_refused_even_with_matching_digest(self):
+        from unittest.mock import patch
+        with self.store.connection(True) as db:
+            db.execute("UPDATE tasks SET state='done' WHERE id=?",(self.maintenance['id'],))
+            terminal = self.store.row(db, 'tasks', self.maintenance['id'])
+        with patch.object(hub,'RECOVERY497_MAINTENANCE_DIGEST',hub.Hub._digest(terminal)):
+            self.refused_unchanged(self.invoke)
+
+    def test_changed_owner_terminal_row_and_assignment_are_refused(self):
+        for field,value in (('owner','other'),('state','done'),('state','cancelled')):
+            with self.store.connection(True) as db:
+                db.execute(f'UPDATE tasks SET {field}=? WHERE id=?',(value,self.key))
+            self.refused_unchanged(self.invoke)
+            with self.store.connection(True) as db:
+                db.execute(f'UPDATE tasks SET {field}=? WHERE id=?',(self.row[field],self.key))
+        with self.store.connection(True) as db:
+            db.execute("UPDATE tasks SET note='changed' WHERE id=?",(self.maintenance['id'],))
+        self.refused_unchanged(self.invoke)
+
+    def test_cli_rejects_oversized_and_malformed_receipts_without_writes(self):
+        receipt=Path(self.tmp.name)/'receipt.json'
+        for content in ('x'*65537,'{', '\ud800'):
+            receipt.write_bytes(content.encode('utf-8',errors='surrogatepass'))
+            before=self.snapshot()
+            result=subprocess.run([sys.executable,str(HUB_DIR/'hub.py'),'--db',str(self.store.path),
+                                   'mirror-accepted-497-recovery','--session',self.actor,
+                                   '--canonical-receipt',str(receipt)],capture_output=True,text=True)
+            self.assertEqual(result.returncode,2)
+            self.assertEqual(before,self.snapshot())
+
+    def test_audit_failure_rolls_back_owner_and_revision(self):
+        from unittest.mock import patch
+        before=self.snapshot()
+        with patch.object(self.store,'event',side_effect=RuntimeError('fixture audit failure')):
+            with self.assertRaises(RuntimeError):self.invoke()
+        self.assertEqual(before,self.snapshot())
+
+    def test_concurrent_attempts_have_exactly_one_success(self):
+        results=[]
+        def run():
+            try:self.invoke();results.append('ok')
+            except hub.Conflict:results.append('conflict')
+        threads=[threading.Thread(target=run) for _ in range(2)]
+        for t in threads:t.start()
+        for t in threads:t.join()
+        self.assertCountEqual(results,['ok','conflict'])
+
+    def test_cli_disabled_and_no_generic_owner_or_target_options(self):
+        cmd=[sys.executable,str(HUB_DIR/'hub.py'),'--db',str(self.store.path),
+             'mirror-accepted-497-recovery','--session',self.actor]
+        receipt=Path(self.tmp.name)/'receipt.json';receipt.write_text(json.dumps(self.receipt),encoding='utf-8')
+        before=self.snapshot()
+        result=subprocess.run(cmd+['--canonical-receipt',str(receipt)],capture_output=True,text=True)
+        self.assertEqual(result.returncode,2)
+        self.assertEqual(before,self.snapshot())
+        help_result=subprocess.run(cmd+['--help'],capture_output=True,text=True)
+        self.assertEqual(help_result.returncode,0)
+        for forbidden in ('--owner','--target','--force','--authorization','--skip'):
+            self.assertNotIn(forbidden,help_result.stdout)
+
+
+class PowerUiTwoTestReleaseTests(unittest.TestCase):
+    """Exercise the supported operation only against disposable fixture hubs."""
+    def setUp(self):
+        from unittest.mock import patch
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        self.store = hub.Hub(Path(self.tmp.name) / 'fixture.sqlite3'); self.store.init()
+        self.actor = hub.POWER_UI_RELEASE_ACTOR; self.owner = hub.POWER_UI_RELEASE_OWNER
+        self.recipient = hub.POWER_UI_RELEASE_RECIPIENT; self.key = hub.POWER_UI_RELEASE_TASK
+        for session in (self.actor, self.owner, self.recipient, 'other'):
+            self.store.register(session, 'codex', session, 'fixture')
+        self.row = self.store.apply(self.owner, dict(op='create_task', id=self.key,
+            stream='quick-access', title='Retained legacy fixture', branch='unassigned',
+            paths=list(hub.POWER_UI_RELEASE_PATHS)+['src/retained.ts'],
+            note='Retain native obligations and prior scope', pr='https://example.test/pr'))
+        self.row = self.store.apply(self.owner, dict(op='claim_task', id=self.key, rev=1))
+        with self.store.connection(True) as db:
+            db.execute('UPDATE tasks SET rev=30 WHERE id=?', (self.key,))
+            self.row = self.store.row(db, 'tasks', self.key)
+        self.maintenance = self.store.apply(self.actor, dict(op='create_task',
+            id=hub.POWER_UI_RELEASE_MAINTENANCE_TASK, stream='coordination', title='Fixture maintenance',
+            branch='agent/codex-local/540-power-two-test-release-binding', paths=['scripts/agent_hub/hub.py'],
+            issue='https://github.com/ronnierosal/Re-Gear/issues/540'))
+        self.maintenance = self.store.apply(self.actor, dict(op='claim_task', id=self.maintenance['id'], rev=1))
+        self.destination = self.store.apply(self.recipient, dict(op='create_task',
+            id=hub.POWER_UI_RELEASE_DESTINATION_TASK, stream='quick-access', title='Two fixtures',
+            branch='agent/codex-local/476-test-fixtures-01a12b76', paths=list(hub.POWER_UI_RELEASE_PATHS),
+            issue='https://github.com/ronnierosal/Re-Gear/issues/539',
+            dependencies=[hub.POWER_UI_RELEASE_MAINTENANCE_TASK]))
+        self.canonical = dict(revision=2, status='claimed', owner=self.recipient,
+                              branch=self.destination['branch'], scope=list(hub.POWER_UI_RELEASE_PATHS))
+        self.ui = dict(revision=45, status='in-progress', owner=hub.POWER_UI_RELEASE_UI_OWNER,
+                       scope=['src/retained.ts'], validation='Native gates retained')
+        self.receipt = dict(issue=539, record=self.canonical, receipt=hub.POWER_UI_RELEASE_RECEIPT,
+                            ui_issue=476, ui_record=self.ui, ui_receipt=hub.POWER_UI_RELEASE_UI_RECEIPT)
+        with self.store.connection() as db:
+            self.registration = self.store.row(db, 'sessions', self.recipient)
+        bindings = dict(actor=self.actor, recipient=self.recipient,
+            paths=list(hub.POWER_UI_RELEASE_PATHS), maintenance_task=self.maintenance['id'],
+            destination_task=self.destination['id'], legacy_digest=hub.Hub._digest(self.row),
+            maintenance_digest=hub.Hub._digest(self.maintenance),
+            registration_digest=hub.Hub._digest(self.registration),
+            destination_digest=hub.Hub._digest(self.destination),
+            canonical539_digest=hub.Hub._digest(self.canonical), canonical476_digest=hub.Hub._digest(self.ui))
+        self.approval = dict(schema=1, operation='release_power_ui_two_test_claims', bindings=bindings,
+            evidence=[dict(request=dict(source_thread_id='fixture-thread', source_message_id=f'question-{i}',
+                                       role='assistant', text=f'Synthetic fixture question {i}'),
+                           approval=dict(source_thread_id='fixture-thread', source_message_id=f'answer-{i}',
+                                        role='user', text=f'Synthetic fixture consent {i}')) for i in range(3)])
+        self.receipt['approval'] = self.approval
+        for name, value in {
+            'POWER_UI_RELEASE_PREIMAGE_DIGEST': hub.Hub._digest(self.row),
+            'POWER_UI_RELEASE_CANONICAL_DIGEST': hub.Hub._digest(self.canonical),
+            'POWER_UI_RELEASE_UI_DIGEST': hub.Hub._digest(self.ui),
+            'POWER_UI_RELEASE_DESTINATION_DIGEST': hub.Hub._digest(self.destination),
+            'POWER_UI_RELEASE_REGISTRATION_DIGEST': hub.Hub._digest(self.registration),
+            'POWER_UI_RELEASE_MAINTENANCE_DIGEST': hub.Hub._digest(self.maintenance),
+            'POWER_UI_RELEASE_EXECUTION_AUTHORIZATION': hub.Hub._digest(self.approval),
+        }.items():
+            p = patch.object(hub, name, value); p.start(); self.addCleanup(p.stop)
+
+    def snapshot(self): return self.store.status(), self.store.history()
+    def invoke(self, actor=None, receipt=None):
+        return self.store.release_power_ui_two_test_claims(actor or self.actor,
+            self.receipt if receipt is None else receipt)
+    def refused(self, callback):
+        before = self.snapshot()
+        with self.assertRaises((hub.Conflict, ValueError)): callback()
+        self.assertEqual(before, self.snapshot())
+
+    def test_only_fixed_two_paths_and_revision_change_preserves_history_and_owner(self):
+        before = self.snapshot(); result = self.invoke(); after = result['task']
+        self.assertEqual(after, dict(self.row, paths=json.dumps(['src/retained.ts']), rev=31))
+        event = self.store.history()[0]
+        self.assertEqual((event['actor'], event['action'], event['target']),
+                         (self.actor, 'release_power_ui_two_test_claims', self.key))
+        detail = json.loads(event['detail'])
+        self.assertEqual(detail['released_paths'], list(hub.POWER_UI_RELEASE_PATHS))
+        self.assertEqual(detail['authorization'],
+                         dict(kind='private-user-approval-v1', sha256=hub.Hub._digest(self.approval)))
+        self.assertEqual(detail['before_digest'], hub.Hub._digest(self.row))
+        self.assertEqual(detail['after_digest'], hub.Hub._digest(after))
+        self.assertEqual(before[1], self.store.history()[1:])
+        self.assertEqual(before[0]['transfers'], self.store.status()['transfers'])
+        self.refused(self.invoke)  # Replay cannot release further scope.
+
+    def test_wrong_actor_receipt_and_every_canonical_field_refused(self):
+        self.refused(lambda: self.invoke(actor=self.owner))
+        for key in self.receipt:
+            altered = copy.deepcopy(self.receipt); altered[key] = None
+            self.refused(lambda: self.invoke(receipt=altered))
+        for record_key in ('record', 'ui_record'):
+            for key in self.receipt[record_key]:
+                altered = copy.deepcopy(self.receipt); altered[record_key][key] = None
+                self.refused(lambda: self.invoke(receipt=altered))
+        altered = dict(self.receipt, extra='no extensions')
+        self.refused(lambda: self.invoke(receipt=altered))
+        self.refused(lambda: self.invoke(receipt=dict(self.receipt, issue=True)))
+
+    def test_every_preimage_field_mutation_refused(self):
+        for key in self.row:
+            if key in ('id', 'stream', 'owner'): continue
+            old = self.row[key]; altered = old+1 if type(old) is int else old+'x'
+            with self.store.connection(True) as db:
+                db.execute(f'UPDATE tasks SET {key}=? WHERE id=?', (altered, self.key))
+            self.refused(self.invoke)
+            with self.store.connection(True) as db:
+                db.execute(f'UPDATE tasks SET {key}=? WHERE id=?', (old, self.key))
+        for key, value in (('owner', 'other'), ('state', 'done'), ('state', 'cancelled'),
+                           ('stream', 'coordination')):
+            with self.store.connection(True) as db:
+                db.execute(f'UPDATE tasks SET {key}=? WHERE id=?', (value, self.key))
+            self.refused(self.invoke)
+            with self.store.connection(True) as db:
+                db.execute(f'UPDATE tasks SET {key}=? WHERE id=?', (self.row[key], self.key))
+
+    def test_disabled_and_changed_maintenance_authority_refused(self):
+        from unittest.mock import patch
+        for name in ('POWER_UI_RELEASE_EXECUTION_AUTHORIZATION', 'POWER_UI_RELEASE_MAINTENANCE_DIGEST',
+                     'POWER_UI_RELEASE_DESTINATION_DIGEST', 'POWER_UI_RELEASE_REGISTRATION_DIGEST',
+                     'POWER_UI_RELEASE_UI_DIGEST'):
+            with patch.object(hub, name, None): self.refused(self.invoke)
+        with self.store.connection(True) as db:
+            db.execute("UPDATE tasks SET note='changed assignment' WHERE id=?", (self.maintenance['id'],))
+        self.refused(self.invoke)
+
+    def test_pending_transfer_and_active_collision_refused(self):
+        transfer = self.store.apply(self.owner, dict(op='offer_transfer', kind='task', id=self.key,
+            rev=30, to=self.recipient, note='Authentic pending transfer fixture'))
+        self.refused(self.invoke)
+        self.store.apply(self.owner, dict(op='cancel_transfer', id=transfer['id']))
+        self.store.apply('other', dict(op='create_task', id='collision', stream='quick-access',
+            title='Fixture collision', branch='other/branch', paths=[hub.POWER_UI_RELEASE_PATHS[0]]))
+        # Only a synthetic fixture can install a colliding active claim.
+        with self.store.connection(True) as db:
+            db.execute("UPDATE tasks SET owner='other',state='in_progress' WHERE id='collision'")
+        self.refused(self.invoke)
+
+    def test_unregistered_recipient_refused(self):
+        with self.store.connection(True) as db:
+            db.execute('DELETE FROM sessions WHERE id=?', (self.recipient,))
+        self.refused(self.invoke)
+
+    def test_every_destination_registration_and_maintenance_field_refused(self):
+        for table, original in (('tasks', self.destination), ('sessions', self.registration),
+                                ('tasks', self.maintenance)):
+            for key, old in original.items():
+                if key == 'id': continue
+                if key == 'owner': altered = 'other'
+                elif key == 'stream': altered = 'coordination' if old != 'coordination' else 'quick-access'
+                elif key == 'state': altered = 'review'
+                elif type(old) is int: altered = old + 1
+                else: altered = (old or '') + 'x'
+                with self.store.connection(True) as db:
+                    db.execute(f'UPDATE {table} SET {key}=? WHERE id=?', (altered, original['id']))
+                self.refused(self.invoke)
+                with self.store.connection(True) as db:
+                    db.execute(f'UPDATE {table} SET {key}=? WHERE id=?', (old, original['id']))
+
+    def test_private_approval_contract_integrity_limits_and_order(self):
+        malformed = []
+        for key in self.approval:
+            altered = copy.deepcopy(self.approval); altered[key] = None; malformed.append(altered)
+        malformed.extend([dict(self.approval, schema=True), dict(self.approval, extra='forbidden'),
+                          'private-message-reference-is-not-evidence'])
+        for key in self.approval['bindings']:
+            altered = copy.deepcopy(self.approval); altered['bindings'][key] = None; malformed.append(altered)
+        for count in (0, 1, 2, 4):
+            altered = copy.deepcopy(self.approval)
+            altered['evidence'] = (altered['evidence'] * 2)[:count]; malformed.append(altered)
+        altered = copy.deepcopy(self.approval); altered['evidence'].reverse(); malformed.append(altered)
+        for index in range(3):
+            for kind in ('request', 'approval'):
+                for key in self.approval['evidence'][index][kind]:
+                    for value in (None, True, '', 'x' * (16385 if key == 'text' else 257)):
+                        altered = copy.deepcopy(self.approval)
+                        altered['evidence'][index][kind][key] = value; malformed.append(altered)
+                altered = copy.deepcopy(self.approval)
+                altered['evidence'][index][kind]['extra'] = 'forbidden'; malformed.append(altered)
+        altered = copy.deepcopy(self.approval)
+        altered['evidence'][0]['approval']['role'] = 'assistant'; malformed.append(altered)
+        for approval in malformed:
+            self.refused(lambda: self.invoke(receipt=dict(self.receipt, approval=approval)))
+
+    def test_private_approval_schema_limits_even_if_digest_is_rebound_in_fixture(self):
+        from unittest.mock import patch
+        for field, value in (('text', 'é' * 8193), ('source_message_id', 'é' * 129), ('role', 'assistant')):
+            altered = copy.deepcopy(self.approval); altered['evidence'][0]['approval'][field] = value
+            with patch.object(hub, 'POWER_UI_RELEASE_EXECUTION_AUTHORIZATION', hub.Hub._digest(altered)):
+                self.refused(lambda: self.invoke(receipt=dict(self.receipt, approval=altered)))
+
+    def test_cli_rejects_duplicate_keys_at_all_receipt_levels(self):
+        import io
+        from contextlib import redirect_stderr
+        receipt = Path(self.tmp.name) / 'duplicate.json'
+        serialized = json.dumps(self.receipt)
+        duplicates = [serialized.replace('"issue": 539', '"issue": 1, "issue": 539', 1),
+                      serialized.replace('"schema": 1', '"schema": 0, "schema": 1', 1),
+                      serialized.replace('"role": "user"', '"role": "assistant", "role": "user"', 1)]
+        for content in duplicates:
+            receipt.write_text(content, encoding='utf-8'); before = self.snapshot()
+            with redirect_stderr(io.StringIO()):
+                self.assertEqual(hub.main(['--db', str(self.store.path), 'release-power-ui-two-test-claims',
+                    '--session', self.actor, '--canonical-receipt', str(receipt)]), 2)
+            self.assertEqual(self.snapshot(), before)
+
+    def test_audit_or_cas_failure_rolls_back_all_changes(self):
+        from unittest.mock import patch
+        before = self.snapshot()
+        with patch.object(self.store, 'event', side_effect=RuntimeError('fixture audit failure')):
+            with self.assertRaises(RuntimeError): self.invoke()
+        self.assertEqual(before, self.snapshot())
+        with self.store.connection(True) as db:
+            db.execute("CREATE TRIGGER reject_release BEFORE UPDATE ON tasks BEGIN SELECT RAISE(IGNORE); END")
+        self.refused(self.invoke)
+
+    def test_two_concurrent_invocations_have_one_success(self):
+        results = []
+        def run():
+            try: self.invoke(); results.append('ok')
+            except hub.Conflict: results.append('conflict')
+        threads = [threading.Thread(target=run) for _ in range(2)]
+        for t in threads: t.start()
+        for t in threads: t.join()
+        self.assertCountEqual(results, ['ok', 'conflict'])
+
+    def test_cli_bounded_invalid_receipts_and_no_override_options(self):
+        receipt = Path(self.tmp.name) / 'receipt.json'
+        cmd = [sys.executable, str(HUB_DIR/'hub.py'), '--db', str(self.store.path),
+               'release-power-ui-two-test-claims', '--session', self.actor]
+        for content in (b'x'*65537, b'{', b'\xff', json.dumps(self.receipt).encode()):
+            receipt.write_bytes(content); before = self.snapshot()
+            result = subprocess.run(cmd+['--canonical-receipt', str(receipt)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2); self.assertEqual(before, self.snapshot())
+        help_result = subprocess.run(cmd+['--help'], capture_output=True, text=True)
+        self.assertEqual(help_result.returncode, 0)
+        for forbidden in ('--owner', '--target', '--paths', '--force', '--authorization', '--skip'):
+            self.assertNotIn(forbidden, help_result.stdout)
+
+    def test_supported_cli_success_then_replay_preserves_destination_and_registration(self):
+        import io
+        from contextlib import redirect_stdout
+        receipt = Path(self.tmp.name) / 'accepted.json'
+        receipt.write_text(json.dumps(self.receipt), encoding='utf-8')
+        args = ['--db', str(self.store.path), 'release-power-ui-two-test-claims',
+                '--session', self.actor, '--canonical-receipt', str(receipt)]
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(hub.main(args), 0)
+        self.assertEqual(json.loads(output.getvalue())['task']['rev'], 31)
+        with self.store.connection() as db:
+            self.assertEqual(self.store.row(db, 'tasks', self.destination['id']), self.destination)
+            self.assertEqual(self.store.row(db, 'sessions', self.recipient), self.registration)
+            self.assertEqual(self.store.row(db, 'tasks', self.maintenance['id']), self.maintenance)
+        before = self.snapshot()
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(hub.main(args), 2)
+        self.assertEqual(self.snapshot(), before)
 
 
 def load_tests(loader, tests, pattern):
@@ -12,6 +643,10 @@ def load_tests(loader, tests, pattern):
         spec = importlib.util.spec_from_file_location('regear_hub_tests', HUB_DIR / 'test_hub.py')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        return loader.loadTestsFromModule(module)
+        suite = loader.loadTestsFromModule(module)
+        suite.addTests(loader.loadTestsFromTestCase(CompiledMaintenanceTests))
+        suite.addTests(loader.loadTestsFromTestCase(RecoveryMirror497Tests))
+        suite.addTests(loader.loadTestsFromTestCase(PowerUiTwoTestReleaseTests))
+        return suite
     finally:
         sys.path.remove(str(HUB_DIR))

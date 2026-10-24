@@ -7,9 +7,9 @@ const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'
 test('physical Ally cards use concise eGPU copy and never split words in artwork tiles', () => {
   const actions = read('src/quick-access/expanded-command-center/test-build-actions.ts');
   const tiles = read('src/quick-access/expanded-command-center/regear-tile.tsx');
-  assert.match(actions, /unavailable\('switch-handheld','Handheld'\)/);
-  assert.match(actions, /value:'Check status'/);
-  assert.match(actions, /title:'Safe Disconnect \+ Shutdown'/);
+  assert.match(actions, /unavailable\('switch-handheld','Switch to Handheld'\)/);
+  assert.match(actions, /value:'Guarded'/);
+  assert.match(actions, /title:'Disconnect eGPU & Shut Down'/);
   assert.match(tiles, /rg-v3-tile-copy \.rg-expanded-value\{[^}]*overflow-wrap:normal[^}]*word-break:normal[^}]*hyphens:none/);
   assert.doesNotMatch(tiles, /rg-v3-tile-copy \.rg-expanded-value\{[^}]*overflow-wrap:anywhere/);
 });

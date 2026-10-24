@@ -30,7 +30,7 @@ function ConnectedSleepRequest({ owner }: { owner: ReturnType<typeof createPower
     if (choice) modal.current = showModal(<EgpuConfirmModal
       strTitle="Sleep with eGPU connected?"
       strDescription="Re-Gear will request normal sleep and keep the eGPU connected. It will not run Safe Disconnect or remove the dock in software. Save your work before continuing."
-      strOKButtonText="Sleep connected"
+      strOKButtonText="Sleep, Keep eGPU Connected"
       strCancelButtonText="Cancel"
       className="rg-whole-dock-confirm"
       bDestructiveWarning

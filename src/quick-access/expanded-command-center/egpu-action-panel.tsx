@@ -14,8 +14,8 @@ const labels: Record<EgpuQuickActionId, string> = {
   "switch-handheld": "Switch to Handheld",
   "safe-disconnect": "Safe Disconnect",
   resolution: "Resolution",
-  "disconnect-sleep": "Disconnect + Sleep",
-  "disconnect-shutdown": "Safe Disconnect + Shutdown",
+  "disconnect-sleep": "Disconnect eGPU & Sleep",
+  "disconnect-shutdown": "Disconnect eGPU & Shut Down",
   status: "eGPU Status",
 };
 
@@ -23,8 +23,8 @@ const defaultDetails: Record<EgpuQuickActionId, string> = {
   "switch-handheld": "Use the handheld display and keep the eGPU connected",
   "safe-disconnect": "Start the verified eGPU disconnect flow",
   resolution: "Change the active display target",
-  "disconnect-sleep": "Disconnect, unplug when prompted, then sleep",
-  "disconnect-shutdown": "Disconnect safely, then request shutdown",
+  "disconnect-sleep": "Disconnect the eGPU, unplug when prompted, then sleep",
+  "disconnect-shutdown": "Disconnect the eGPU safely, then shut down",
   status: "View connection, display, render, and readiness status",
 };
 

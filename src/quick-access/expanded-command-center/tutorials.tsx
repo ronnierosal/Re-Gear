@@ -18,9 +18,9 @@ export const tutorials=[
  ]},
  {id:'sleep-wake',title:'Sleep & Wake',source:guide+'eGPU-and-Docking#sleep-and-wake',steps:[
   'Sleep with an eGPU is still being validated.',
-  'Disconnect + Sleep starts the guarded disconnect. Follow the messages, unplug only when Re-Gear asks, and expect sleep only after absence is verified.',
-  'Sleep — Keep eGPU Connected opens a confirmation. Sleep connected uses normal sleep without running Safe Disconnect.',
-  'Shutdown and Safe Disconnect + Shutdown are separate actions. Follow the status for the action you selected.',
+  'Disconnect eGPU & Sleep starts the guarded disconnect. Follow the messages, unplug only when Re-Gear asks, and expect sleep only after absence is verified.',
+  'Sleep — Keep eGPU Connected opens a confirmation. It uses normal sleep without running Safe Disconnect.',
+  'Shut Down and Disconnect eGPU & Shut Down are separate actions. Follow the status for the action you selected.',
   'A control can be Ready, Pending, Unavailable or Refused. If an action is unavailable or refused, stop and follow the message. Do not force sleep or use software reconnect.',
  ]},
  {id:'stuck',title:'If You Get Stuck',source:guide+'Troubleshooting',steps:[

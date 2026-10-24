@@ -45,20 +45,33 @@ contact Decky, register a store channel, deploy, or use publication secrets.
 ### Development and production profiles
 
 `contracts/build-profiles.json` names two build profiles. Development preserves
-all existing development features and their safety checks. Production enables
-eGPU connection, Safe Disconnect, brightness and volume. Its command center has
-one eGPU tab, live connection status, the plain disconnect action and the existing
-left-side brightness/volume sliders. Right-side quick buttons, other tabs,
-customization and combined sleep/shutdown actions are hidden. Sliders reuse native
-Steam readings and setters; missing capabilities remain unavailable. The backend also
-rejects unapproved public mutation calls before dispatch. Internal connection,
-sleep protection, pending-operation completion and recovery remain active.
-Production connection details and the connection popup are observational. Manual
-TV/recovery/setup controls, preference changes and development game-relaunch
-requests are not admitted. Existing automatic connection and recovery continue
-under their saved consent and lifecycle rules. An unavailable Safe Disconnect
-card stays visible without dispatching; pending disconnect status recovery is
-independent of starting a new action.
+all existing development features and their safety checks. Production shows the
+eGPU projection from `src/build-profile.ts`: Switch Display, eGPU Status, Safe
+Disconnect, Disconnect eGPU & Sleep, and Disconnect eGPU & Shut Down, plus the
+existing left-side brightness/volume sliders. Its command center has one eGPU
+tab; right-side quick buttons, other tabs, layout editing and customization are
+hidden.
+
+The shell in `src/quick-access/expanded-command-center/shell.tsx` routes the
+display-target, disconnect-sleep and disconnect-shutdown action IDs, but frontend
+routing is not backend admission. Switch Display is visible while production
+backend policy refuses its manual TV/handheld switching approval and execution
+RPCs; display preview and status remain available. Guarded disconnect,
+completion, sleep and shutdown requests are admitted through
+`PRODUCTION_DOCK_ACTIONS` and `rpc_allowed` in
+`backend/regear/delivery/build_profile_policy.py`. Product admission does not
+bypass lifecycle safety checks. This is a source inventory, not installation or
+hardware-validation evidence for these actions.
+
+Sliders reuse native Steam readings and setters; missing capabilities remain
+unavailable. The backend rejects unapproved public mutation calls before
+dispatch. Internal connection, sleep protection, pending-operation completion
+and recovery remain active. Production connection details and the connection
+popup are observational. Manual recovery/setup mutations, preference changes
+and development game-relaunch requests are not admitted. Existing automatic
+connection and recovery continue under their saved consent and lifecycle rules.
+An unavailable Safe Disconnect card stays visible without dispatching; pending
+disconnect status recovery is independent of starting a new action.
 
 Build and package the same selected profile (PowerShell example):
 

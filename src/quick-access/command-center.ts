@@ -108,7 +108,7 @@ export function commandCenterTiles(input: CommandCenterInput): CommandCenterTile
     // Reading plus a route. Requesting a display change stays with the surface
     // that already owns its guards; this tile does not run a transition.
     display: {
-      id: "display", title: input.displayAction?.title ?? "Display switch unavailable",
+      id: "display", title: input.displayAction?.title ?? "Switch Display",
       value: input.displayTarget
         ? { text: input.displayTarget, known: true }
         : { text: "Unknown", known: false },
@@ -131,10 +131,10 @@ export function commandCenterTiles(input: CommandCenterInput): CommandCenterTile
     "sleep-connected": {
       id: "sleep-connected", title: "Sleep — Keep eGPU Connected",
       value: { text: "Available", known: true }, available: true, reason: null,
-      activation: "act", actionLabel: "Sleep connected", developmental: false,
+      activation: "act", actionLabel: "Sleep, Keep eGPU Connected", developmental: false,
     },
     shutdown: {
-      id: "shutdown", title: "Safe Disconnect + Shutdown",
+      id: "shutdown", title: "Disconnect eGPU & Shut Down",
       value: { text: "Guarded", known: true }, available: true, reason: null,
       activation: "act", actionLabel: "Review and shut down", developmental: false,
     },

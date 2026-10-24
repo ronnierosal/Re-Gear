@@ -53,6 +53,10 @@ export type ReadinessResult = {
   reasons?: readonly string[];
   checkedAt: number;
   expiresAt: number;
+  /** The subject the evidence was measured on, when the evidence path knows
+   * it. A consumer must not present evidence for a different account/build. */
+  account?: string | null;
+  buildId?: number | null;
 };
 
 export type SyncState = {
@@ -147,8 +151,9 @@ export function createOfflineSyncController(
     cancelTimer();
     if (disposed) return;
     const prefs = preferences.get();
-    // No schedule configured means the passive path stays exactly as it was.
-    if (!prefs.enabled || prefs.intervalMinutes === null) return;
+    // No schedule configured, or no game to prepare, means no timer at all:
+    // the passive path stays exactly as it was.
+    if (!prefs.enabled || prefs.intervalMinutes === null || !game) return;
     timer = ports.setTimer(() => {
       timer = undefined;
       void start("scheduled");
@@ -157,6 +162,11 @@ export function createOfflineSyncController(
   };
 
   const current = (mine: number) => !disposed && mine === generation;
+
+  /** A running-state probe that throws cannot say the game is stopped. */
+  const idle = (): boolean => {
+    try { return ports.isIdle() === true; } catch { return false; }
+  };
 
   const finish = (nextPhase: SyncPhase, code: string | null) => {
     phase = nextPhase;
@@ -182,7 +192,7 @@ export function createOfflineSyncController(
     // Coalesce: a second press, or a tick while a run is live, joins the run in
     // progress rather than starting a competing one.
     if (running) return false;
-    if (!ports.isIdle()) {
+    if (!idle()) {
       // Same rule the passive path already applies. A scheduled tick simply
       // does not run; nothing is renewed and nothing is torn down.
       if (by === "scheduled") return false;
@@ -209,7 +219,7 @@ export function createOfflineSyncController(
     }
     if (!current(mine) || !sameGame(game, target)) return false;
     if (needs) readiness = needs;
-    if (!ports.isIdle()) {
+    if (!idle()) {
       stopForGameplay(by);
       return false;
     }
@@ -219,7 +229,7 @@ export function createOfflineSyncController(
     // Subscribers run synchronously. Revalidate selection and gameplay after
     // publishing this transition, immediately before the native request.
     if (!current(mine) || !sameGame(game, target)) return false;
-    if (!ports.isIdle()) {
+    if (!idle()) {
       stopForGameplay(by);
       return false;
     }

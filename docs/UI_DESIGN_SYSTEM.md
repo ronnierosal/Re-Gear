@@ -82,6 +82,35 @@ current unconfirmed step and necessary keep-connected guidance. Full diagnostics
 remain accessible. Do not infer failure from elapsed time or promise a three-minute
 deadline. Connection, display activation and physical unplug clearance are separate.
 
+## Player terminology
+
+Use one player-facing word per concept. Diagnostics, logs and technical rows may
+stay technical; normal controls use these terms (issue #447):
+
+| Concept | Status wording | Action wording |
+| --- | --- | --- |
+| Not docked | Portable (mode) | Switch to Handheld |
+| Docked to a TV | TV Docked (mode) | Switch to TV |
+| Built-in screen | Handheld / handheld screen | — |
+| External GPU | eGPU (External GPU only in device-detail rows) | — |
+| Guarded eGPU removal | — | Safe Disconnect |
+| Removal, then sleep | — | Disconnect eGPU & Sleep |
+| Removal, then power off | — | Disconnect eGPU & Shut Down |
+| Power off without removal | — | Shut Down |
+| Sleep without removal | — | Sleep — Keep eGPU Connected |
+
+- An action label names the verb and what it affects. The card value is status
+  (`Ready`, `Unavailable`, an observed reading), not a second command.
+- When an action is unavailable it keeps an action label (`Switch Display`) and
+  gives the reason in secondary text; it never turns into a status headline.
+- Do not name a specific handheld model ("Ally") in general controls.
+- `frontend-tests/player-terminology.test.mjs` guards these labels in the files
+  that define them.
+
+Command Center artwork tiles keep labels at or above the 9px clamp minimum on
+compact handheld layouts. A long action label may use a third balanced line;
+it is never shrunk below that floor or truncated with an ellipsis.
+
 ## Motion and lifecycle
 
 - Checking/waiting: small continuous activity animation, including genuine waiting
